@@ -85,8 +85,12 @@ void OrthoPhysicsScene_update(struct Scene *scene, Engine *engine) {
 void OrthoPhysicsScene_render(struct Scene *scene, Engine *engine) {
     Graphics *graphics = ((Engine *)engine)->graphics;
 
+    GLuint dshader = Graphics_get_shader(graphics, "decal");
+    GLuint tshader = Graphics_get_shader(graphics, "tilemap");
+  
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
+    glUseProgram(dshader);
+  
     // TODO: Parallax bg camera
     double bgScale = (scene->camera->scale + 2) / 2;
     VPoint screen_center = {
@@ -108,9 +112,11 @@ void OrthoPhysicsScene_render(struct Scene *scene, Engine *engine) {
                        VPointZero, scene->bg_texture->size,0);
     Graphics_project_camera(graphics, scene->camera);
 
+    glUseProgram(tshader);
     TileMap_render(scene->tile_map, graphics,
                    scene->world->pixels_per_meter * scene->world->grid_size);
 
+    glUseProgram(dshader);
     LIST_FOREACH(scene->entities, first, next, current) {
         GameEntity *thing = current->value;
         if (thing == NULL) break;

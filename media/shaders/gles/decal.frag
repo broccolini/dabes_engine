@@ -13,4 +13,5 @@ void main()
     mixed = texColor + colorVarying * (1.0 - texColor.a);
   }
   gl_FragColor = mixed;
+  //gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);
 }

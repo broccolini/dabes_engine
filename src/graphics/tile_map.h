@@ -38,7 +38,8 @@ typedef struct TileMapLayer {
     int visible;
     int gid_count;
     uint32_t *tile_gids;
-    GfxTexture *texture;
+    GfxTexture *atlas;
+    Tileset *tileset;
 } TileMapLayer;
 
 TileMapLayer *TileMapLayer_create();

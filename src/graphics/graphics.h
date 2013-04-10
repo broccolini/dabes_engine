@@ -67,6 +67,41 @@ GfxTexture *GfxTexture_from_surface(SDL_Surface *surface);
 #endif
 void GfxTexture_destroy(GfxTexture *texture);
 
+enum {
+	UNIFORM_DECAL_PROJECTION_MATRIX,
+	UNIFORM_DECAL_MODELVIEW_MATRIX,
+  UNIFORM_DECAL_HAS_TEXTURE,
+	UNIFORM_TILEMAP_PROJECTION_MATRIX,
+	UNIFORM_TILEMAP_MODELVIEW_MATRIX,
+	UNIFORM_TILEMAP_TILE_SIZE,
+	UNIFORM_TILEMAP_SHEET_ROWS_COLS,
+	UNIFORM_TILEMAP_MAP_ROWS_COLS,
+	NUM_UNIFORMS
+} UNIFORMS;
+
+enum {
+	ATTRIB_DECAL_VERTEX,
+	ATTRIB_DECAL_COLOR,
+  ATTRIB_DECAL_TEXTURE,
+  ATTRIB_TILEMAP_VERTEX,
+  ATTRIB_TILEMAP_TEXTURE,
+	NUM_ATTRIBUTES
+} ATTRIBS;
+
+enum {
+  SAMPLER_TILEMAP_ATLAS,
+  SAMPLER_TILEMAP_TILESET,
+  NUM_SAMPLERS
+} SAMPLERS;
+
+extern GLint GfxShader_uniforms[NUM_UNIFORMS];
+extern GLint GfxShader_attributes[NUM_ATTRIBUTES];
+extern GLint GfxShader_samplers[NUM_SAMPLERS];
+
+typedef struct GfxShader {
+  GLuint gl_program;
+} GfxShader;
+
 ///////////
 
 typedef struct Graphics {
@@ -76,13 +111,13 @@ typedef struct Graphics {
 #ifndef DABES_IOS
     TTF_Font *debug_text_font;
 #endif
-    GLuint shader;
     GLuint array_buffer;
 
     GfxUMatrix projection_matrix;
     GfxUMatrix modelview_matrix;
   
     Hashmap *textures;
+    Hashmap *shaders;
 } Graphics;
 
 // Rendering
@@ -123,7 +158,8 @@ void Graphics_translate_modelview_matrix(Graphics *graphics,
 
 // Shader
 GLuint Graphics_load_shader(Graphics *graphics, char *vert_name,
-        char *frag_name);
+        char *frag_name, GLuint *compiled_program);
+GLuint Graphics_get_shader(Graphics *graphics, char *name);
 int Graphics_init(void *self);
 void Graphics_log_shader(GLuint shader);
 void Graphics_log_program(GLuint program);

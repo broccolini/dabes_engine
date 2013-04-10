@@ -20,7 +20,7 @@ void Scene_restart(Scene *scene, Engine *engine) {
 }
 
 void Scene_reset_camera(Scene *scene) {
-    scene->camera->scale = 1;
+    scene->camera->scale = 0.5;
     scene->camera->rotation_radians = 0;
     scene->camera->track_entity = scene->entities->first->value;
     scene->camera->translation.x = 0;

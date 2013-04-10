@@ -33,95 +33,33 @@ error:
   return NULL;
 }
 
+GfxTexture *TileMapLayer_create_atlas(TileMapLayer *layer, TileMap *map) {
+  int i = 0;
+  uint32_t rel_gids[layer->gid_count];
+  for (i = 0; i < layer->gid_count; i++) {
+    TilesetTile *tile = TileMap_resolve_tile_gid(map, layer->tile_gids[i]);
+    uint32_t first_gid = 0;
+    uint32_t diff_gid = UINT32_MAX;
+    if (tile) {
+      layer->tileset = tile->tileset;
+      first_gid = tile->tileset->first_gid;
+      diff_gid = layer->tile_gids[i] - first_gid;
+    }
+    rel_gids[i] = diff_gid;
+    uint8_t *gid_raw = (uint8_t *)&(diff_gid);
+    printf("%d %d %d %d, ", gid_raw[0], gid_raw[1], gid_raw[2], gid_raw[3]);
+  }
+  return GfxTexture_from_data((unsigned char *)rel_gids, map->cols, map->rows);
+}
+
 void TileMapLayer_destroy(TileMapLayer *layer) {
   check(layer != NULL, "No layer to destroy");
-  if (layer->texture) GfxTexture_destroy(layer->texture);
+  if (layer->atlas) GfxTexture_destroy(layer->atlas);
   if (layer->tile_gids != NULL) free(layer->tile_gids);
   free(layer);
   return;
 error:
   return;
-}
-
-void TileMapLayer_draw(TileMapLayer *layer, TileMap *map, Graphics *graphics) {
-    int gid_idx = 0;
-    int width = map->cols * map->tile_size.w;
-    int height = map->rows * map->tile_size.h;
-#ifdef DABES_IOS
-    CGImageRef tileset_img = NULL;
-    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-    unsigned char *rawData = calloc(1, height * width * 4);
-    int bytesPerPixel = 4;
-    int bytesPerRow = bytesPerPixel * width;
-    int bitsPerComponent = 8;
-    CGContextRef context =
-        CGBitmapContextCreate(rawData, width, height, bitsPerComponent,
-                              bytesPerRow, colorSpace,
-                              kCGImageAlphaPremultipliedLast |
-                              kCGBitmapByteOrder32Big);
-    CGContextTranslateCTM(context, 0, height);
-    CGContextScaleCTM(context, 1.0, -1.0);
-#else
-    SDL_Surface *tileset_img = NULL;
-    SDL_Surface *surface = SDL_CreateRGBSurface(SDL_HWSURFACE, width,
-        height, 32, rmask, gmask, bmask, amask);
-#endif
-  
-    for (gid_idx = 0; gid_idx < layer->gid_count; gid_idx++) {
-      uint32_t gid = layer->tile_gids[gid_idx];
-      if (gid != 0) {
-        TilesetTile *tile = TileMap_resolve_tile_gid(map, gid);
-        if (tile == NULL) continue;
-        int gid_col = gid_idx % (int)map->cols;
-        int gid_row = gid_idx / (int)map->cols;
-#ifdef DABES_IOS
-        if (tileset_img == NULL) {
-          tileset_img = Graphics_load_CGImage(tile->tileset->img_src);
-        }
-        
-        CGContextSaveGState(context);
-        CGRect clipRect = CGRectMake(gid_col * tile->size.w,
-                                     gid_row * tile->size.h,
-                                     tile->size.w,
-                                     tile->size.h);
-        
-        CGRect imgRect = CGRectMake(clipRect.origin.x - tile->tl.x,
-                                    clipRect.origin.y - tile->tl.y,
-                                    CGImageGetWidth(tileset_img),
-                                    CGImageGetHeight(tileset_img));
-        
-        // WOW annoying
-        CGContextClipToRect(context, clipRect);
-        CGContextTranslateCTM(context, 0, tile->tileset->texture->size.h);
-        CGContextScaleCTM(context, 1.0, -1.0);
-        imgRect.origin.y *= -1;
-        CGContextDrawImage(context, imgRect, tileset_img);
-        CGContextRestoreGState(context);
-#else
-        if (tileset_img == NULL) {
-          tileset_img = Graphics_load_SDLImage(tile->tileset->img_src);
-          SDL_SetAlpha(tileset_img, 0, 255);
-          SDL_SetColorKey(tileset_img, 0, 0);
-        }
-        
-        SDL_Rect srcRect = {tile->tl.x, tile->tl.y, tile->size.w, tile->size.h};
-        SDL_Rect dstRect = {gid_col * tile->size.w, gid_row * tile->size.h,
-            tile->size.w, tile->size.h};
-        SDL_BlitSurface(tileset_img, &srcRect, surface, &dstRect);
-#endif
-        free(tile);
-      }
-    }
-  
-#ifdef DABES_IOS
-    CGContextRelease(context);
-    CGColorSpaceRelease(colorSpace);
-    layer->texture = GfxTexture_from_data(rawData, width, height);
-    free(rawData);
-#else
-    layer->texture = GfxTexture_from_surface(surface);
-    if (tileset_img) SDL_FreeSurface(tileset_img);
-#endif
 }
 
 void Tileset_destroy(Tileset *tileset) {
@@ -201,19 +139,85 @@ error:
 
 void TileMap_render(TileMap *map, Graphics *graphics, int pixels_per_cell) {
     if (map == NULL) return;
+  
+    glEnableVertexAttribArray(GfxShader_attributes[ATTRIB_TILEMAP_VERTEX]);
+    glEnableVertexAttribArray(GfxShader_attributes[ATTRIB_TILEMAP_TEXTURE]);
+    glVertexAttribPointer(GfxShader_attributes[ATTRIB_TILEMAP_VERTEX], 4,
+                          GL_FLOAT, GL_FALSE, 0, 0);
+
+    glVertexAttribPointer(GfxShader_attributes[ATTRIB_TILEMAP_TEXTURE], 4,
+                          GL_FLOAT, GL_FALSE, 0,
+                          (GLvoid *)(sizeof(GfxUVertex) * 4));
+  
     Graphics_reset_modelview_matrix(graphics);
     int layer_idx = 0;
     for (layer_idx = 0; layer_idx < map->layers->end;
          layer_idx++) {
       TileMapLayer *layer = DArray_get(map->layers, layer_idx);
-      if (layer->texture == NULL) {
-          TileMapLayer_draw(layer, map, graphics);
+      if (!layer->atlas) {
+        layer->atlas = TileMapLayer_create_atlas(layer, map);
       }
-      VRect layer_rect = VRect_from_xywh(0, 0,
-                                         map->cols * pixels_per_cell,
-                                         map->rows * pixels_per_cell);
-      GLfloat color[4] = {0,0,1,0};
-      Graphics_draw_rect(graphics, layer_rect, color, layer->texture,
-                         VPointZero, GfxSizeZero, 0);
+      
+      VRect rect = VRect_from_xywh(0, 0,
+                                   map->cols * pixels_per_cell,
+                                   map->rows * pixels_per_cell);
+      Graphics_reset_modelview_matrix(graphics);
+      double w = rect.tr.x - rect.tl.x;
+      double h = rect.bl.y - rect.tl.y;
+      VPoint center = {
+          rect.tl.x + w / 2,
+          rect.tl.y + h / 2
+      };
+      Graphics_translate_modelview_matrix(graphics, center.x, center.y, 0.f);
+      
+      GfxUVertex tex_tl = {0,0,0,0};
+      GfxUVertex tex_tr = {1,0,0,0};
+      GfxUVertex tex_bl = {0,1,0,0};
+      GfxUVertex tex_br = {1,1,0,0};
+      
+      glUniformMatrix4fv(GfxShader_uniforms[UNIFORM_TILEMAP_PROJECTION_MATRIX],
+                         1, GL_FALSE, graphics->projection_matrix.gl);
+      glUniformMatrix4fv(GfxShader_uniforms[UNIFORM_TILEMAP_MODELVIEW_MATRIX],
+                         1, GL_FALSE, graphics->modelview_matrix.gl);
+      
+      GfxUVertex vertices[12] = {
+        // Vertex
+        {-w / 2.0, -h / 2.0, 0, 1},
+        {w / 2.0, -h / 2.0, 0, 1},
+        {-w / 2.0, h / 2.0, 0, 1},
+        {w / 2.0, h / 2.0, 0, 1},
+
+        // Texture
+        tex_tl, tex_tr, tex_bl, tex_br
+      };
+      glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+      
+      // tile size
+      if (layer->tileset) {
+        glUniform2i(GfxShader_uniforms[UNIFORM_TILEMAP_TILE_SIZE],
+                    layer->tileset->tile_size.w, layer->tileset->tile_size.h);
+        // sheet rows cols
+        glUniform2i(GfxShader_uniforms[UNIFORM_TILEMAP_SHEET_ROWS_COLS],
+                    layer->tileset->texture->size.w / layer->tileset->tile_size.w,
+                    layer->tileset->texture->size.h / layer->tileset->tile_size.h
+                    );
+      }
+      // map rows cols
+      glUniform2i(GfxShader_uniforms[UNIFORM_TILEMAP_MAP_ROWS_COLS],
+                  map->cols, map->rows);
+      
+      // load atlas texture
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, layer->atlas->gl_tex);
+      
+      // load tileset texture
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D, layer->tileset->texture->gl_tex);
+      
+      glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+      
+      glBindTexture(GL_TEXTURE_2D, 0);
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, 0);
     }
 }

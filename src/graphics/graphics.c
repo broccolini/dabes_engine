@@ -15,23 +15,8 @@
 #endif
 #endif
 
-// uniform index
-enum {
-	UNIFORM_PROJECTION_MATRIX,
-	UNIFORM_MODELVIEW_MATRIX,
-  UNIFORM_HAS_TEXTURE,
-	NUM_UNIFORMS
-} UNIFORMS;
-GLint uniforms[NUM_UNIFORMS];
-
-// attribute index
-enum {
-	ATTRIB_VERTEX,
-	ATTRIB_COLOR,
-  ATTRIB_TEXTURE,
-	NUM_ATTRIBUTES
-} ATTRIBS;
-GLint attributes[NUM_ATTRIBUTES];
+GLint GfxShader_uniforms[NUM_UNIFORMS];
+GLint GfxShader_attributes[NUM_ATTRIBUTES];
 
 void mat4f_MultiplyMat4f(const float* a, const float* b, float* mout)
 {
@@ -244,11 +229,11 @@ void Graphics_stroke_rect(Graphics *graphics, VRect rect, GLfloat color[4],
 
     GfxUVertex tex = {0,0,0,0};
 
-    glUniform1i(uniforms[UNIFORM_HAS_TEXTURE], 0);
+    glUniform1i(GfxShader_uniforms[UNIFORM_DECAL_HAS_TEXTURE], 0);
 #ifdef DABES_IOS
-    glUniformMatrix4fv(uniforms[UNIFORM_PROJECTION_MATRIX], 1,
+    glUniformMatrix4fv(GfxShader_uniforms[UNIFORM_DECAL_PROJECTION_MATRIX], 1,
                        GL_FALSE, graphics->projection_matrix.gl);
-    glUniformMatrix4fv(uniforms[UNIFORM_MODELVIEW_MATRIX], 1,
+    glUniformMatrix4fv(GfxShader_uniforms[UNIFORM_DECAL_MODELVIEW_MATRIX], 1,
                        GL_FALSE, graphics->modelview_matrix.gl);
 
     GfxUVertex cVertex = {color[0], color[1], color[2], color[3]};
@@ -294,6 +279,19 @@ void Graphics_draw_rect(Graphics *graphics, VRect rect, GLfloat color[4],
         GfxTexture *texture, VPoint textureOffset, GfxSize textureSize,
         double rotation) {
     check_mem(graphics);
+    glEnableVertexAttribArray(GfxShader_attributes[ATTRIB_DECAL_VERTEX]);
+    glEnableVertexAttribArray(GfxShader_attributes[ATTRIB_DECAL_COLOR]);
+    glEnableVertexAttribArray(GfxShader_attributes[ATTRIB_DECAL_TEXTURE]);
+    glVertexAttribPointer(GfxShader_attributes[ATTRIB_DECAL_VERTEX], 4,
+                          GL_FLOAT, GL_FALSE, 0, 0);
+
+    glVertexAttribPointer(GfxShader_attributes[ATTRIB_DECAL_COLOR], 4,
+                          GL_FLOAT, GL_FALSE, 0,
+                          (GLvoid *)(sizeof(GfxUVertex) * 4));
+
+    glVertexAttribPointer(GfxShader_attributes[ATTRIB_DECAL_TEXTURE], 4,
+                          GL_FLOAT, GL_FALSE,
+                          0, (GLvoid *)(sizeof(GfxUVertex) * 8));
     Graphics_reset_modelview_matrix(graphics);
     double w = rect.tr.x - rect.tl.x;
     double h = rect.bl.y - rect.tl.y;
@@ -323,11 +321,12 @@ void Graphics_draw_rect(Graphics *graphics, VRect rect, GLfloat color[4],
         tex_br.packed.y = (textureOffset.y + textureSize.h) / texture->size.h;
     }
   
-    glUniform1i(uniforms[UNIFORM_HAS_TEXTURE], texture ? texture->gl_tex : 0);
+    glUniform1i(GfxShader_uniforms[UNIFORM_DECAL_HAS_TEXTURE],
+                texture ? texture->gl_tex : 0);
 #ifdef DABES_IOS
-    glUniformMatrix4fv(uniforms[UNIFORM_PROJECTION_MATRIX], 1,
+    glUniformMatrix4fv(GfxShader_uniforms[UNIFORM_DECAL_PROJECTION_MATRIX], 1,
                        GL_FALSE, graphics->projection_matrix.gl);
-    glUniformMatrix4fv(uniforms[UNIFORM_MODELVIEW_MATRIX], 1,
+    glUniformMatrix4fv(GfxShader_uniforms[UNIFORM_DECAL_MODELVIEW_MATRIX], 1,
                        GL_FALSE, graphics->modelview_matrix.gl);
 
     GfxUVertex cVertex = {color[0], color[1], color[2], color[3]};
@@ -348,6 +347,7 @@ void Graphics_draw_rect(Graphics *graphics, VRect rect, GLfloat color[4],
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
     // Texture
+    glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texture ? texture->gl_tex : 0);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glBindTexture(GL_TEXTURE_2D, 0);
@@ -545,6 +545,75 @@ void Graphics_translate_modelview_matrix(Graphics *graphics,
         GFXUMatrix_translate(graphics->modelview_matrix, x, y, z);
 }
 
+void Graphics_build_decal_shader(Graphics *graphics) {
+    GLuint *shader = malloc(sizeof(GLuint));
+    Graphics_load_shader(graphics, shader_path("decal.vert"),
+        shader_path("decal.frag"), shader);
+    Hashmap_set(graphics->shaders, bfromcstr("decal"), shader);
+  
+    GLuint program = *shader;
+    GfxShader_uniforms[UNIFORM_DECAL_HAS_TEXTURE] =
+        glGetUniformLocation(program, "hasTexture");
+#ifdef DABES_IOS
+    glUseProgram(program);
+    GfxShader_uniforms[UNIFORM_DECAL_MODELVIEW_MATRIX] =
+        glGetUniformLocation(program, "modelView");
+    GfxShader_uniforms[UNIFORM_DECAL_PROJECTION_MATRIX] =
+        glGetUniformLocation(program, "projection");
+    GfxShader_attributes[ATTRIB_DECAL_VERTEX] =
+        glGetAttribLocation(program, "position");
+    GfxShader_attributes[ATTRIB_DECAL_COLOR] =
+        glGetAttribLocation(program, "color");
+    glEnableVertexAttribArray(GfxShader_attributes[ATTRIB_DECAL_VERTEX]);
+    glEnableVertexAttribArray(GfxShader_attributes[ATTRIB_DECAL_COLOR]);
+    glEnableVertexAttribArray(GfxShader_attributes[ATTRIB_DECAL_TEXTURE]);
+    glVertexAttribPointer(GfxShader_attributes[ATTRIB_DECAL_VERTEX], 4,
+                          GL_FLOAT, GL_FALSE, 0, 0);
+
+    glVertexAttribPointer(GfxShader_attributes[ATTRIB_DECAL_COLOR], 4,
+                          GL_FLOAT, GL_FALSE, 0,
+                          (GLvoid *)(sizeof(GfxUVertex) * 4));
+
+    glVertexAttribPointer(GfxShader_attributes[ATTRIB_DECAL_TEXTURE], 4,
+                          GL_FLOAT, GL_FALSE,
+                          0, (GLvoid *)(sizeof(GfxUVertex) * 8));
+#endif
+}
+
+void Graphics_build_tilemap_shader(Graphics *graphics) {
+    GLuint *shader = calloc(1, sizeof(GLuint));
+    Graphics_load_shader(graphics, shader_path("tilemap.vert"),
+        shader_path("tilemap.frag"), shader);
+    Hashmap_set(graphics->shaders, bfromcstr("tilemap"), shader);
+  
+    GLuint program = *shader;
+#ifdef DABES_IOS
+    glUseProgram(program);
+    GfxShader_uniforms[UNIFORM_TILEMAP_MODELVIEW_MATRIX] =
+        glGetUniformLocation(program, "modelView");
+    GfxShader_uniforms[UNIFORM_TILEMAP_PROJECTION_MATRIX] =
+        glGetUniformLocation(program, "projection");
+    GfxShader_uniforms[UNIFORM_TILEMAP_TILE_SIZE] =
+        glGetUniformLocation(program, "tileSize");
+    GfxShader_uniforms[UNIFORM_TILEMAP_SHEET_ROWS_COLS] =
+        glGetUniformLocation(program, "sheetRowsCols");
+    GfxShader_uniforms[UNIFORM_TILEMAP_MAP_ROWS_COLS] =
+        glGetUniformLocation(program, "mapRowsCols");
+    GfxShader_attributes[ATTRIB_TILEMAP_VERTEX] =
+        glGetAttribLocation(program, "position");
+    GfxShader_attributes[ATTRIB_TILEMAP_TEXTURE] =
+        glGetAttribLocation(program, "texture");
+    glEnableVertexAttribArray(GfxShader_attributes[ATTRIB_TILEMAP_VERTEX]);
+    glEnableVertexAttribArray(GfxShader_attributes[ATTRIB_TILEMAP_TEXTURE]);
+    glVertexAttribPointer(GfxShader_attributes[ATTRIB_TILEMAP_VERTEX], 4,
+                          GL_FLOAT, GL_FALSE, 0, 0);
+
+    glVertexAttribPointer(GfxShader_attributes[ATTRIB_TILEMAP_TEXTURE], 4,
+                          GL_FLOAT, GL_FALSE, 0,
+                          (GLvoid *)(sizeof(GfxUVertex) * 4));
+  
+#endif
+}
 
 int Graphics_init(void *self) {
     Graphics *graphics = self;
@@ -554,7 +623,6 @@ int Graphics_init(void *self) {
     graphics->debug_text_texture = 0;
     graphics->screen_size.w = SCREEN_WIDTH;
     graphics->screen_size.h = SCREEN_HEIGHT;
-    graphics->shader = 0;
     glGenBuffers(1, &graphics->array_buffer);
     glBindBuffer(GL_ARRAY_BUFFER, graphics->array_buffer);
     glClearColor(0.65f, 0.65f, 0.65f, 1.0f);
@@ -564,11 +632,13 @@ int Graphics_init(void *self) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   
-    Graphics_load_shader(graphics, shader_path("decal.vert"),
-        shader_path("decal.frag"));
-
+    graphics->shaders = Hashmap_create(NULL, NULL);
+  
+    Graphics_build_decal_shader(graphics);
+    Graphics_build_tilemap_shader(graphics);
+  
     graphics->textures = Hashmap_create(NULL, NULL);
-
+  
   return 1;
 }
 
@@ -586,7 +656,7 @@ void Graphics_destroy(void *self) {
 }
 
 GLuint Graphics_load_shader(Graphics *graphics, char *vert_name,
-        char *frag_name) {
+        char *frag_name, GLuint *compiled_program) {
     GLuint vertex_shader, fragment_shader;
     vertex_shader = glCreateShader(GL_VERTEX_SHADER);
     fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
@@ -619,10 +689,6 @@ GLuint Graphics_load_shader(Graphics *graphics, char *vert_name,
     GLuint program = glCreateProgram();
     glAttachShader(program, vertex_shader);
     glAttachShader(program, fragment_shader);
-#ifdef DABES_IOS
-    glBindAttribLocation(program, ATTRIB_VERTEX, "position");
-    glBindAttribLocation(program, ATTRIB_COLOR, "color");
-#endif
     glLinkProgram(program);
     Graphics_log_program(program);
 
@@ -630,32 +696,18 @@ GLuint Graphics_load_shader(Graphics *graphics, char *vert_name,
     glGetProgramiv(program, GL_LINK_STATUS, &linked);
     check(linked == 1, "Linking shader program");
 
-    uniforms[UNIFORM_HAS_TEXTURE] =
-        glGetUniformLocation(program, "hasTexture");
-#ifdef DABES_IOS
-    uniforms[UNIFORM_MODELVIEW_MATRIX] =
-        glGetUniformLocation(program, "modelView");
-    uniforms[UNIFORM_PROJECTION_MATRIX] =
-        glGetUniformLocation(program, "projection");
-    glEnableVertexAttribArray(ATTRIB_VERTEX);
-    glEnableVertexAttribArray(ATTRIB_COLOR);
-    glEnableVertexAttribArray(ATTRIB_TEXTURE);
-    glVertexAttribPointer(ATTRIB_VERTEX, 4, GL_FLOAT, GL_FALSE, 0,
-                          0);
-
-    glVertexAttribPointer(ATTRIB_COLOR, 4, GL_FLOAT, GL_FALSE,
-                          0, (GLvoid *)(sizeof(GfxUVertex) * 4));
-
-    glVertexAttribPointer(ATTRIB_TEXTURE, 4, GL_FLOAT, GL_FALSE,
-                          0, (GLvoid *)(sizeof(GfxUVertex) * 8));
-#endif
-
-  // TODO: Hashmap
-    graphics->shader = program;
-    glUseProgram(program);
+    //if(strcmp(vert_name, shader_path("decal.vert")) == 0) return 1;
+    *compiled_program = program;
     return 1;
 error:
     return 0;
+}
+
+GLuint Graphics_get_shader(Graphics *graphics, char *name) {
+  bstring key = bfromcstr(name);
+  GLuint *val = Hashmap_get(graphics->shaders, key);
+  if (val) return *val;
+  return 0;
 }
 
 void Graphics_log_shader(GLuint shader) {
