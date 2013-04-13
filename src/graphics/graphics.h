@@ -71,11 +71,14 @@ enum {
 	UNIFORM_DECAL_PROJECTION_MATRIX,
 	UNIFORM_DECAL_MODELVIEW_MATRIX,
   UNIFORM_DECAL_HAS_TEXTURE,
+  UNIFORM_DECAL_TEXTURE,
 	UNIFORM_TILEMAP_PROJECTION_MATRIX,
 	UNIFORM_TILEMAP_MODELVIEW_MATRIX,
 	UNIFORM_TILEMAP_TILE_SIZE,
 	UNIFORM_TILEMAP_SHEET_ROWS_COLS,
 	UNIFORM_TILEMAP_MAP_ROWS_COLS,
+  UNIFORM_TILEMAP_ATLAS,
+  UNIFORM_TILEMAP_TILESET,
 	NUM_UNIFORMS
 } UNIFORMS;
 
@@ -99,6 +102,8 @@ extern GLint GfxShader_attributes[NUM_ATTRIBUTES];
 extern GLint GfxShader_samplers[NUM_SAMPLERS];
 
 typedef struct GfxShader {
+  void (*set_up)(struct GfxShader *shader);
+  void (*tear_down)(struct GfxShader *shader);
   GLuint gl_program;
 } GfxShader;
 
@@ -108,6 +113,7 @@ typedef struct Graphics {
     Object proto;
     GfxSize screen_size;
     GLuint debug_text_texture;
+    GfxShader *current_shader;
 #ifndef DABES_IOS
     TTF_Font *debug_text_font;
 #endif
@@ -159,7 +165,8 @@ void Graphics_translate_modelview_matrix(Graphics *graphics,
 // Shader
 GLuint Graphics_load_shader(Graphics *graphics, char *vert_name,
         char *frag_name, GLuint *compiled_program);
-GLuint Graphics_get_shader(Graphics *graphics, char *name);
+GfxShader *Graphics_get_shader(Graphics *graphics, char *name);
+void Graphics_use_shader(Graphics *graphics, GfxShader *shader);
 int Graphics_init(void *self);
 void Graphics_log_shader(GLuint shader);
 void Graphics_log_program(GLuint program);

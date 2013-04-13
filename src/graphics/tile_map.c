@@ -35,21 +35,40 @@ error:
 
 GfxTexture *TileMapLayer_create_atlas(TileMapLayer *layer, TileMap *map) {
   int i = 0;
-  uint32_t rel_gids[layer->gid_count];
-  for (i = 0; i < layer->gid_count; i++) {
-    TilesetTile *tile = TileMap_resolve_tile_gid(map, layer->tile_gids[i]);
+  layer->raw_atlas = malloc(sizeof(uint8_t) * layer->gid_count * 4);
+  for (i = 0; i < layer->gid_count * 4; i += 4) {
+    int tile_idx = i / 4;
+    TilesetTile *tile = TileMap_resolve_tile_gid(map, layer->tile_gids[tile_idx]);
     uint32_t first_gid = 0;
     uint32_t diff_gid = UINT32_MAX;
     if (tile) {
       layer->tileset = tile->tileset;
       first_gid = tile->tileset->first_gid;
-      diff_gid = layer->tile_gids[i] - first_gid;
+      diff_gid = layer->tile_gids[tile_idx] - first_gid;
+      printf("abs %u, rel %u >> ", layer->tile_gids[tile_idx], diff_gid);
+    } else {
+      printf("NULL tile >> ");
     }
-    rel_gids[i] = diff_gid;
-    uint8_t *gid_raw = (uint8_t *)&(diff_gid);
-    printf("%d %d %d %d, ", gid_raw[0], gid_raw[1], gid_raw[2], gid_raw[3]);
+    
+    layer->raw_atlas[i]   = (diff_gid & 0x000000ff);
+    layer->raw_atlas[i+1] = (diff_gid & 0x0000ff00) >> 8;
+    layer->raw_atlas[i+2] = (diff_gid & 0x00ff0000) >> 16;
+    layer->raw_atlas[i+3] = (diff_gid & 0xff000000) >> 24;
+    printf("%d %d %d %d\n", layer->raw_atlas[i], layer->raw_atlas[i+1],
+           layer->raw_atlas[i+2], layer->raw_atlas[i+3]);
   }
-  return GfxTexture_from_data((unsigned char *)rel_gids, map->cols, map->rows);
+  return GfxTexture_from_data((unsigned char *)layer->raw_atlas,
+                              map->cols, map->rows);
+}
+
+void TileMapLayer_dump_raw_atlas(TileMapLayer *layer) {
+  if (layer == NULL) return;
+  if (layer->raw_atlas == NULL) return;
+  int i = 0;
+  for (i = 0; i < layer->gid_count * 4; i += 4) {
+    printf("%d %d %d %d\n", layer->raw_atlas[i], layer->raw_atlas[i+1],
+           layer->raw_atlas[i+2], layer->raw_atlas[i+3]);
+  }
 }
 
 void TileMapLayer_destroy(TileMapLayer *layer) {
@@ -104,6 +123,7 @@ TilesetTile *TileMap_resolve_tile_gid(TileMap *map, uint32_t gid) {
   int ts_cols, ts_rows;
   for (i = 0; i < map->tilesets->end; i++) {
     Tileset *tileset = DArray_get(map->tilesets, i);
+    if (tileset->texture == NULL) continue;
     ts_cols = (tileset->texture->size.w - 2 * tileset->margin) /
                   (tileset->tile_size.w + tileset->spacing);
     ts_rows = (tileset->texture->size.h - 2 * tileset->margin) /
@@ -116,7 +136,7 @@ TilesetTile *TileMap_resolve_tile_gid(TileMap *map, uint32_t gid) {
       break;
     }
   }
-  check(matched != NULL, "No matching tileset found for gid %u", gid);
+  if (matched == NULL) return NULL;
   
   int gid_idx = gid - matched->first_gid;
   int gid_col = gid_idx % ts_cols;
@@ -139,15 +159,6 @@ error:
 
 void TileMap_render(TileMap *map, Graphics *graphics, int pixels_per_cell) {
     if (map == NULL) return;
-  
-    glEnableVertexAttribArray(GfxShader_attributes[ATTRIB_TILEMAP_VERTEX]);
-    glEnableVertexAttribArray(GfxShader_attributes[ATTRIB_TILEMAP_TEXTURE]);
-    glVertexAttribPointer(GfxShader_attributes[ATTRIB_TILEMAP_VERTEX], 4,
-                          GL_FLOAT, GL_FALSE, 0, 0);
-
-    glVertexAttribPointer(GfxShader_attributes[ATTRIB_TILEMAP_TEXTURE], 4,
-                          GL_FLOAT, GL_FALSE, 0,
-                          (GLvoid *)(sizeof(GfxUVertex) * 4));
   
     Graphics_reset_modelview_matrix(graphics);
     int layer_idx = 0;
@@ -194,28 +205,36 @@ void TileMap_render(TileMap *map, Graphics *graphics, int pixels_per_cell) {
       
       // tile size
       if (layer->tileset) {
-        glUniform2i(GfxShader_uniforms[UNIFORM_TILEMAP_TILE_SIZE],
+        glUniform2f(GfxShader_uniforms[UNIFORM_TILEMAP_TILE_SIZE],
                     layer->tileset->tile_size.w, layer->tileset->tile_size.h);
         // sheet rows cols
-        glUniform2i(GfxShader_uniforms[UNIFORM_TILEMAP_SHEET_ROWS_COLS],
+        glUniform2f(GfxShader_uniforms[UNIFORM_TILEMAP_SHEET_ROWS_COLS],
                     layer->tileset->texture->size.w / layer->tileset->tile_size.w,
                     layer->tileset->texture->size.h / layer->tileset->tile_size.h
                     );
       }
       // map rows cols
-      glUniform2i(GfxShader_uniforms[UNIFORM_TILEMAP_MAP_ROWS_COLS],
+      glUniform2f(GfxShader_uniforms[UNIFORM_TILEMAP_MAP_ROWS_COLS],
                   map->cols, map->rows);
+      int dump = 0;
+      if (dump) {
+        TileMapLayer_dump_raw_atlas(layer);
+      }
       
       // load atlas texture
+      glUniform1i(GfxShader_uniforms[UNIFORM_TILEMAP_ATLAS], 0);
       glActiveTexture(GL_TEXTURE0);
       glBindTexture(GL_TEXTURE_2D, layer->atlas->gl_tex);
       
       // load tileset texture
+      glUniform1i(GfxShader_uniforms[UNIFORM_TILEMAP_TILESET], 1);
       glActiveTexture(GL_TEXTURE1);
       glBindTexture(GL_TEXTURE_2D, layer->tileset->texture->gl_tex);
       
       glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+      glFlush();
       
+      glActiveTexture(GL_TEXTURE1);
       glBindTexture(GL_TEXTURE_2D, 0);
       glActiveTexture(GL_TEXTURE0);
       glBindTexture(GL_TEXTURE_2D, 0);
