@@ -103,11 +103,43 @@ VRect VRect_fill_size(GfxSize source_size, GfxSize dest_size) {
     return VRect_from_xywh(x, y, w, h);
 }
 
+static inline int data_potize(unsigned char **data, int width, int height,
+                              int *pot_width, int *pot_height) {
+  int pot_w = 2;
+  int pot_h = 2;
+  while (pot_w < width) pot_w <<= 1;
+  while (pot_h < height) pot_h <<= 1;
+  
+  *data = realloc(*data, pot_w * pot_h * sizeof(unsigned char) * 4);
+  check(data != NULL, "Couldn't realloc texture for potize");
+  uint32_t **new_data = (uint32_t **)data;
+  
+  *pot_width = pot_w;
+  *pot_height = pot_h;
+  
+  int last_orig_index = width * height - 1;
+  int i = 0;
+  for (i = last_orig_index; i >= 0; i--) {
+    int old_col = i % width;
+    int old_row = i / width;
+    int new_index = old_row * pot_w + old_col;
+    (*new_data)[new_index] = (*new_data)[i];
+  }
+  
+  return 1;
+error:
+  return 0;
+}
+
 GfxTexture *GfxTexture_from_data(unsigned char *data, int width, int height) {
     GfxTexture *texture = calloc(1, sizeof(GfxTexture));
     check(texture != NULL, "Couldn't not allocate texture");
     texture->size.w = width;
     texture->size.h = height;
+  
+    int pot_width, pot_height;
+    int rc = data_potize(&data, width, height, &pot_width, &pot_height);
+    check(rc == 1, "Could not potize data");
   
     glGenTextures(1, &texture->gl_tex);
     glBindTexture(GL_TEXTURE_2D, texture->gl_tex);

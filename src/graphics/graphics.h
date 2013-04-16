@@ -54,6 +54,7 @@ typedef union GfxUMatrix {
 
 typedef struct GfxTexture {
   GfxSize size;
+  GfxSize pot_size;
   GLuint gl_tex;
 } GfxTexture;
 
