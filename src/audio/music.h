@@ -1,9 +1,6 @@
-#ifndef __audio_h
-#define __audio_h
-#include "../prefix.h"
-#ifdef DABES_IOS
-#include "AudioBridge.h"
-#endif
+#ifndef __music_h
+#define __music_h
+#include "ogg_stream.h"
 
 typedef struct Music {
   double volume;
@@ -12,20 +9,13 @@ typedef struct Music {
 #else
   Mix_Music *mix_music;
 #endif
+  OggStream *ogg_stream;
 } Music;
 
-Music *Music_load(char *filename, char *loop);
+Music *Music_load(Audio *audio, char *filename, char *loop);
 void Music_destroy(Music *music);
 void Music_play(Music *music);
 void Music_pause(Music *music);
 void Music_set_volume(Music *music, double volume);
-  
-typedef struct Audio {
-    Object proto;
-} Audio;
-
-int Audio_init(void *self);
-
-extern Object AudioProto;
 
 #endif

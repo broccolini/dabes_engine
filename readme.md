@@ -44,7 +44,7 @@ Code Gripes:
 
 ```
 # Ya gonna need dis stuf!
-brew install --HEAD sdl sdl_image sdl_ttf sdl_mixer
+brew install --HEAD sdl sdl_image sdl_ttf sdl_mixer libogg libvorbis
 
 make game
 ./game

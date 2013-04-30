@@ -21,14 +21,14 @@ int Scene_init(Scene *scene, Engine *engine) {
         lua_pop(L, 2);
 
         if (intro && loop) {
-            scene->music = Music_load((char *)intro, (char *)loop);
+            scene->music = Music_load(engine->audio, (char *)intro, (char *)loop);
         } else if (intro) {
-            scene->music = Music_load((char *)intro, NULL);
+            scene->music = Music_load(engine->audio, (char *)intro, NULL);
         } else if (loop) {
-            scene->music = Music_load((char *)loop, NULL);
+            scene->music = Music_load(engine->audio, (char *)loop, NULL);
         }
     } else if (lua_type(L, -1) == LUA_TSTRING) {
-        scene->music = Music_load((char *)lua_tostring(L, -1), NULL);
+        scene->music = Music_load(engine->audio, (char *)lua_tostring(L, -1), NULL);
     }
 
     if (scene->music) {

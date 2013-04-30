@@ -1,6 +1,6 @@
-#include "audio.h"
+#include "music.h"
 
-Music *Music_load(char *filename, char *loop) {
+Music *Music_load(Audio *audio, char *filename, char *loop) {
   Music *music = malloc(sizeof(Music));
   music->volume = 1;
 
@@ -11,12 +11,15 @@ Music *Music_load(char *filename, char *loop) {
       AudioBridge_loop(music->bridge, loop);
     }
 #else
-    music->mix_music = Mix_LoadMUS(filename);
+    // music->mix_music = Mix_LoadMUS(filename);
 
-    if (music->mix_music == NULL) {
-        printf("Mix_LoadMUS: %s\n", Mix_GetError());
-    }
+    // if (music->mix_music == NULL) {
+    //     printf("Mix_LoadMUS: %s\n", Mix_GetError());
+    // }
 #endif
+    music->ogg_stream = OggStream_create(filename);
+    List_push(audio->ogg_streams, music->ogg_stream); // SO GHETTO
+    // TODO: Loop
     Music_play(music);
     return music;
 }
@@ -27,6 +30,7 @@ void Music_destroy(Music *music) {
 #else
     Mix_FreeMusic(music->mix_music);
 #endif
+    OggStream_destroy(music->ogg_stream);
     free(music);
 }
 
@@ -34,8 +38,9 @@ void Music_play(Music *music) {
 #ifdef DABES_IOS
     AudioBridge_play(music->bridge);
 #else
-    Mix_PlayMusic(music->mix_music, -1);
+    //Mix_PlayMusic(music->mix_music, -1);
 #endif
+    OggStream_play(music->ogg_stream);
 }
 
 void Music_pause(Music *music) {
@@ -43,8 +48,9 @@ void Music_pause(Music *music) {
     AudioBridge_pause(music->bridge);
 #else
     (void)(music);
-    Mix_HaltMusic();
+    //Mix_HaltMusic();
 #endif
+    // TODO: Pause OGG
 }
 
 void Music_set_volume(Music *music, double volume) {
@@ -52,31 +58,8 @@ void Music_set_volume(Music *music, double volume) {
 #ifdef DABES_IOS
     AudioBridge_set_volume(music->bridge, volume);
 #else
-    Mix_VolumeMusic(volume * 128.f);
+    // Mix_VolumeMusic(volume * 128.f);
 #endif
+    // TODO: OGG Volume
 }
-
-int Audio_init(void *self) {
-    check_mem(self);
-
-#ifdef DABES_IOS
-#else
-   int audio_rate = 44100;
-    Uint16 audio_format = AUDIO_S16;
-    int audio_channels = 2;
-    int audio_buffers = 4096;
-    if (Mix_OpenAudio(audio_rate, audio_format, audio_channels, audio_buffers)) {
-        printf("Unable to open audio!\n");
-        return 0;
-    }
-#endif
-
-    return 1;
-error:
-    return 0;
-}
-
-Object AudioProto = {
-    .init = Audio_init
-};
 
